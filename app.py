@@ -52,12 +52,28 @@ def safe_float(val, default=None):
         return f if not pd.isna(f) else default
     except: return default
 
-def format_large_number(val):
-    v = safe_float(val)
-    if v is None or v == 0: return "取得不可"
-    if v >= 1_000_000_000: return f"${v / 1_000_000_000:.2f}B"
-    elif v >= 1_000_000: return f"${v / 1_000_000:.2f}M"
-    return f"${v:.2f}"
+def format_large_number(num):
+    if num is None or num == "N/A":
+        return "N/A"
+    try:
+        num = float(num)
+        if num == 0:
+            return "$0"
+        
+        is_negative = num < 0
+        abs_num = abs(num) # 絶対値にする
+        
+        if abs_num >= 1_000_000_000:
+            formatted = f"${abs_num / 1_000_000_000:.2f}B"
+        elif abs_num >= 1_000_000:
+            formatted = f"${abs_num / 1_000_000:.2f}M"
+        else:
+            formatted = f"${abs_num:,.2f}"
+            
+        # マイナスだった場合は先頭に「-」をつける
+        return f"-{formatted}" if is_negative else formatted
+    except (ValueError, TypeError):
+        return str(num)
 
 def format_recommendation(rec_key):
     if not rec_key: return "データなし"
@@ -210,9 +226,19 @@ if themes:
                         # --- 【復元】財務詳細パネル ---
                         st.write("#### 📊 業績 & 財務")
                         rev_g, earn_g = safe_float(info.get("rev_growth")), safe_float(info.get("earn_growth"))
+                        
+                        # ▼▼▼ 修正部分ここから ▼▼▼
                         if rev_g is not None and earn_g is not None:
-                            if rev_g > 0 and earn_g > 0: st.success("業績トレンド: 🔥 上向き")
-                            elif rev_g < 0 and earn_g < 0: st.error("業績トレンド: 📉 下向き")
+                            if rev_g > 0 and earn_g > 0: 
+                                st.success("業績トレンド: 🔥 上向き")
+                            elif rev_g < 0 and earn_g < 0: 
+                                st.error("業績トレンド: 📉 下向き")
+                            else:
+                                st.warning("業績トレンド: ⚖️ まちまち") # 売上と利益で方向が違う場合
+                        else:
+                            st.info("業績トレンド: ➖ データなし") # 赤字企業等でデータが取れない場合
+                        # ▲▲▲ 修正部分ここまで ▲▲▲
+
                         st.info(f"推奨: **{format_recommendation(info.get('rec'))}**")
                         
                         t_mean = safe_float(info.get("t_mean"))
