@@ -156,52 +156,16 @@ if themes:
         try:
             data = yf.download(tickers, period="6mo", progress=False)
             if data.empty: return pd.DataFrame()
-            
-            # 指定期間の騰落
             idx = -(days + 1) if len(data) > days else 0
             ret = ((data["Close"].iloc[-1] - data["Close"].iloc[idx]) / data["Close"].iloc[idx]) * 100
             vol = ((data["Volume"].iloc[-1] - data["Volume"].iloc[idx]) / data["Volume"].iloc[idx].replace(0, 1)) * 100
-            
-            # 直近トレンド計算用（最新1日 vs 期間平均の1日あたり騰落）
-            last_day_ret = ((data["Close"].iloc[-1] - data["Close"].iloc[-2]) / data["Close"].iloc[-2]) * 100
-            period_daily_avg = ret / days
-            
-            df = pd.DataFrame({
-                "騰落率": ret, 
-                "出来高変化": vol, 
-                "last_ret": last_day_ret, 
-                "avg_ret": period_daily_avg
-            }).dropna()
-            return df
+            return pd.DataFrame({"騰落率": ret, "出来高変化": vol}).dropna()
         except: return pd.DataFrame()
 
     results = fetch_rankings(all_tickers, days_back)
 
     if not results.empty:
-        theme_summary = []
-        for k, v in themes.items():
-            valid_tickers = [t for t in v if t in results.index]
-            if not valid_tickers: continue
-            
-            avg_ret = results.loc[valid_tickers, "騰落率"].mean()
-            avg_vol = results.loc[valid_tickers, "出来高変化"].mean()
-            
-            # トレンド判定: 直近1日が期間平均を大きく上回れば ↑、下回れば ↓
-            l_ret = results.loc[valid_tickers, "last_ret"].mean()
-            a_ret = results.loc[valid_tickers, "avg_ret"].mean()
-            
-            diff = l_ret - a_ret
-            if diff > 0.5: trend_mark = "↑ 加速"
-            elif diff < -0.5: trend_mark = "↓ 減速"
-            else: trend_mark = "→ 維持"
-            
-            theme_summary.append({
-                "テーマ": k, 
-                "平均騰落率": avg_ret, 
-                "平均出来高変化": avg_vol,
-                "勢い": trend_mark
-            })
-            
+        theme_summary = [{"テーマ": k, "平均騰落率": results.loc[[t for t in v if t in results.index], "騰落率"].mean(), "平均出来高変化": results.loc[[t for t in v if t in results.index], "出来高変化"].mean()} for k, v in themes.items()]
         df_theme = pd.DataFrame(theme_summary).sort_values("平均騰落率", ascending=False)
 
         st.write("### 🏆 セクター・ランキング")
@@ -211,8 +175,7 @@ if themes:
             column_config={
                 "テーマ": st.column_config.TextColumn("テーマ名", width="medium"),
                 "平均騰落率": st.column_config.NumberColumn("騰落率", format="%+.2f %%", width="small"),
-                "平均出来高変化": st.column_config.NumberColumn("出来高", format="%+.1f %%", width="small"),
-                "勢い": st.column_config.TextColumn("勢い (直近)", width="small")
+                "平均出来高変化": st.column_config.NumberColumn("出来高", format="%+.1f %%", width="small")
             },
             height=t_h, on_select="rerun", selection_mode="single-row", hide_index=True
         )
@@ -222,7 +185,6 @@ if themes:
             st.write(f"### 🔍 **{t_name}** の構成銘柄")
             t_list = [t for t in themes[t_name] if t in results.index]
             df_detail = results.loc[t_list].sort_values("騰落率", ascending=False).reset_index()
-            df_detail = df_detail[["index", "騰落率", "出来高変化"]]
             df_detail.columns = ["銘柄", "騰落率", "出来高変化"]
             d_h = int(len(df_detail) * 35.5 + 38)
             sel_stock = st.dataframe(
@@ -261,6 +223,7 @@ if themes:
                         fig.update_layout(height=480, margin=dict(l=10,r=10,t=10,b=10), xaxis_rangeslider_visible=False)
                         st.plotly_chart(fig, use_container_width=True)
                     with col2:
+                        # --- 【復元】財務詳細パネル ---
                         st.write("#### 📊 業績 & 財務")
                         rev_g, earn_g = safe_float(info.get("rev_growth")), safe_float(info.get("earn_growth"))
                         
@@ -284,9 +247,9 @@ if themes:
                         st.write(f"- EBITDA: {format_large_number(info.get('ebitda'))}")
                         st.write(f"- 営業利益率: {safe_float(info.get('margin'), 0)*100:.1f}%")
                         
+                        # --- PER計算 ---
                         eps = safe_float(info.get("f_eps"), 0)
-                        per_val = (curr_val/eps) if eps > 0 else 0
-                        st.write(f"- **予想 PER: {f'{per_val:.2f}' if per_val > 0 else '不可'} 倍**")
+                        st.write(f"- **予想 PER: {f'{(curr_val/eps):.2f}' if eps > 0 else '不可'} 倍**")
                         
                         st.markdown("---")
                         st.write("#### 💰 適正株価シミュレーター")
