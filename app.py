@@ -75,6 +75,25 @@ def format_large_number(num):
     except (ValueError, TypeError):
         return str(num)
 
+# --- 【新規】時価総額の規模判定関数 ---
+def get_mcap_category(mcap):
+    if mcap is None or pd.isna(mcap):
+        return ""
+    try:
+        mcap = float(mcap)
+        if mcap >= 200_000_000_000:
+            return " (超大型)"
+        elif mcap >= 10_000_000_000:
+            return " (大型)"
+        elif mcap >= 2_000_000_000:
+            return " (中型)"
+        elif mcap >= 300_000_000:
+            return " (小型)"
+        else:
+            return " (超小型)"
+    except:
+        return ""
+
 def format_recommendation(rec_key):
     if not rec_key: return "データなし"
     rec_key = str(rec_key).lower()
@@ -254,11 +273,14 @@ if themes:
                         if t_mean:
                             st.write(f"- 平均目標株価: `${t_mean:.2f}` ({((t_mean-curr_val)/curr_val)*100:+.1f}%)")
                         
-                        st.write(f"- 時価総額: {format_large_number(info.get('mcap_raw'))}")
+                        # --- 【修正】時価総額に規模を併記 ---
+                        mcap_val = info.get('mcap_raw')
+                        mcap_category = get_mcap_category(mcap_val)
+                        st.write(f"- 時価総額: {format_large_number(mcap_val)}**{mcap_category}**")
+
                         st.write(f"- EBITDA: {format_large_number(info.get('ebitda'))}")
                         st.write(f"- 営業利益率: {safe_float(info.get('margin'), 0)*100:.1f}%")
                         
-                        # --- 【修正】EPSとPERを縦に並べて表示 ---
                         actual_eps = safe_float(info.get("eps"))
                         f_eps = safe_float(info.get("f_eps"))
 
