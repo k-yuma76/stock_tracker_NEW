@@ -216,14 +216,25 @@ if themes:
                         breaks = [dict(bounds=["sat", "mon"])]
                         if y_i in ["5m", "60m"]: breaks.append(dict(bounds=[16, 9.5], pattern="hour"))
                         fig.update_xaxes(rangebreaks=breaks)
+                        
                         max_v, min_v = hist['High'].max(), hist['Low'].min()
                         fig.add_annotation(x=hist['High'].idxmax(), y=max_v, text=f"高値: ${max_v:.2f}", showarrow=True, font=dict(color="#00C853"), bgcolor="rgba(0,0,0,0.6)")
                         fig.add_annotation(x=hist['Low'].idxmin(), y=min_v, text=f"安値: ${min_v:.2f}", showarrow=True, font=dict(color="#FF5252"), bgcolor="rgba(0,0,0,0.6)")
                         fig.add_annotation(x=hist.index[-1], y=curr_val, text=f"現在: ${curr_val:.2f}", showarrow=True, font=dict(color="white"), bgcolor="rgba(0,0,0,0.6)")
-                        fig.update_layout(height=480, margin=dict(l=10,r=10,t=10,b=10), xaxis_rangeslider_visible=False)
+                        
+                        y_margin_bottom = min_v * 0.15 
+                        y_margin_top = max_v * 0.10    
+                        y_min_padded = max(0, min_v - y_margin_bottom) 
+                        y_max_padded = max_v + y_margin_top
+                        
+                        fig.update_layout(
+                            height=480, 
+                            margin=dict(l=10,r=10,t=10,b=10), 
+                            xaxis_rangeslider_visible=False,
+                            yaxis=dict(range=[y_min_padded, y_max_padded], autorange=False) 
+                        )
                         st.plotly_chart(fig, use_container_width=True)
                     with col2:
-                        # --- 【復元】財務詳細パネル ---
                         st.write("#### 📊 業績 & 財務")
                         rev_g, earn_g = safe_float(info.get("rev_growth")), safe_float(info.get("earn_growth"))
                         
@@ -247,13 +258,26 @@ if themes:
                         st.write(f"- EBITDA: {format_large_number(info.get('ebitda'))}")
                         st.write(f"- 営業利益率: {safe_float(info.get('margin'), 0)*100:.1f}%")
                         
-                        # --- PER計算 ---
-                        eps = safe_float(info.get("f_eps"), 0)
-                        st.write(f"- **予想 PER: {f'{(curr_val/eps):.2f}' if eps > 0 else '不可'} 倍**")
+                        # --- 【修正】EPSとPERを縦に並べて表示 ---
+                        actual_eps = safe_float(info.get("eps"))
+                        f_eps = safe_float(info.get("f_eps"))
+
+                        st.write(f"- 実績 EPS: **{f'${actual_eps:.2f}' if actual_eps is not None else '-'}**")
+                        if actual_eps is not None and actual_eps > 0:
+                            st.write(f"- 実績 PER: **{(curr_val/actual_eps):.2f} 倍**")
+                        else:
+                            st.write("- 実績 PER: **-**")
+
+                        st.write(f"- 予想 EPS: **{f'${f_eps:.2f}' if f_eps is not None else '-'}**")
+                        if f_eps is not None and f_eps > 0:
+                            st.write(f"- 予想 PER: **{(curr_val/f_eps):.2f} 倍**")
+                        else:
+                            st.write("- 予想 PER: **-**")
                         
                         st.markdown("---")
                         st.write("#### 💰 適正株価シミュレーター")
-                        input_eps = st.number_input("予想EPS ($)", value=max(0.01, eps), step=0.1)
+                        sim_eps = f_eps if f_eps is not None else 0
+                        input_eps = st.number_input("予想EPS ($)", value=max(0.01, float(sim_eps)), step=0.1)
                         input_per = st.number_input("ターゲットPER", value=15.0, step=1.0)
                         fair_val = input_eps * input_per
                         st.metric("理論株価", f"${fair_val:.2f}", f"{((fair_val - curr_val) / curr_val) * 100:+.1f}%")
