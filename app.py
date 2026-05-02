@@ -227,7 +227,7 @@ if themes:
 
                 c_p = st.selectbox("チャート期間", ["1日", "1週間", "1ヶ月", "3ヶ月", "6ヶ月", "1年"], index=2)
                 
-                # --- 【修正】裏側で長めのデータを取得するように設定変更 ---
+                # --- 裏側で長めのデータを取得するように設定変更 ---
                 p_map = {
                     "1日": ("5d", "5m"), 
                     "1週間": ("1mo", "60m"), 
@@ -265,7 +265,8 @@ if themes:
                         col1, col2 = st.columns([2, 1])
                         curr_val = hist['Close'].iloc[-1]
                         with col1:
-                            fig = go.Figure(data=[go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], increasing_line_color='#00C853', decreasing_line_color='#FF5252', name='ローソク足')])
+                            # --- 【修正】showlegend=False を追加してローソク足の凡例を非表示 ---
+                            fig = go.Figure(data=[go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], increasing_line_color='#00C853', decreasing_line_color='#FF5252', showlegend=False)])
                             
                             # --- 移動平均線の描画 ---
                             fig.add_trace(go.Scatter(x=hist.index, y=hist['SMA20'], mode='lines', name='SMA 20 (短期)', line=dict(color='#29B6F6', width=1.5)))
