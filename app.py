@@ -20,7 +20,11 @@ CACHE_FILE = "financial_data_cache.csv"
 JP_NAME_DICT = {
     "MU": "マイクロン", "PL": "プラネット・ラボ", "TXN": "テキサス・インスツルメンツ",
     "NVDA": "エヌビディア", "TSLA": "テスラ", "OUST": "オースター",
-    "AMD": "AMD", "INTC": "インテル", "RDW": "レッドワイヤー", "PLAB": "フォトトロニクス"
+    "AMD": "AMD", "INTC": "インテル", "RDW": "レッドワイヤー", "PLAB": "フォトトロニクス",
+    "AXTI": "AXTインク", "WOLF": "ウルフスピード", "AEIS": "アドバンスト・エナジー",
+    "IONQ": "IonQ", "RGTI": "リゲッティ", "QBTS": "D-Wave",
+    "SOUN": "サウンドハウンドAI", "BBAI": "ビッグベア.ai", 
+    "POWI": "パワー・インテグレーションズ", "BKSY": "ブラックスカイ"
 }
 
 # --- 2. 共通関数 ---
@@ -75,7 +79,7 @@ def format_large_number(num):
     except (ValueError, TypeError):
         return str(num)
 
-# --- 【新規】時価総額の規模判定関数 ---
+# --- 時価総額の規模判定関数 ---
 def get_mcap_category(mcap):
     if mcap is None or pd.isna(mcap):
         return ""
@@ -83,9 +87,9 @@ def get_mcap_category(mcap):
         mcap = float(mcap)
         if mcap >= 200_000_000_000:
             return " (超大型)"
-        elif mcap >= 10_000_000_000:
+        elif mcap >= 50_000_000_000:   
             return " (大型)"
-        elif mcap >= 2_000_000_000:
+        elif mcap >= 5_000_000_000:    
             return " (中型)"
         elif mcap >= 300_000_000:
             return " (小型)"
@@ -222,85 +226,120 @@ if themes:
                 st.write(f"### 📈 **{ticker}** ({JP_NAME_DICT.get(ticker, ticker)}) 総合分析")
 
                 c_p = st.selectbox("チャート期間", ["1日", "1週間", "1ヶ月", "3ヶ月", "6ヶ月", "1年"], index=2)
-                p_map = {"1日": ("1d", "5m"), "1週間": ("5d", "60m"), "1ヶ月": ("1mo", "1d"), "3ヶ月": ("3mo", "1d"), "6ヶ月": ("6mo", "1d"), "1年": ("1y", "1d")}
-                y_p, y_i = p_map[c_p]
+                
+                # --- 【修正】裏側で長めのデータを取得するように設定変更 ---
+                p_map = {
+                    "1日": ("5d", "5m"), 
+                    "1週間": ("1mo", "60m"), 
+                    "1ヶ月": ("1y", "1d"), 
+                    "3ヶ月": ("1y", "1d"), 
+                    "6ヶ月": ("2y", "1d"), 
+                    "1年": ("2y", "1d")
+                }
+                f_p, y_i = p_map[c_p]
 
                 info = get_comprehensive_info(ticker, AV_API_KEY)
-                hist = yf.Ticker(ticker).history(period=y_p, interval=y_i)
+                hist = yf.Ticker(ticker).history(period=f_p, interval=y_i)
+                
                 if not hist.empty:
-                    col1, col2 = st.columns([2, 1])
-                    curr_val = hist['Close'].iloc[-1]
-                    with col1:
-                        fig = go.Figure(data=[go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], increasing_line_color='#00C853', decreasing_line_color='#FF5252')])
-                        breaks = [dict(bounds=["sat", "mon"])]
-                        if y_i in ["5m", "60m"]: breaks.append(dict(bounds=[16, 9.5], pattern="hour"))
-                        fig.update_xaxes(rangebreaks=breaks)
-                        
-                        max_v, min_v = hist['High'].max(), hist['Low'].min()
-                        fig.add_annotation(x=hist['High'].idxmax(), y=max_v, text=f"高値: ${max_v:.2f}", showarrow=True, font=dict(color="#00C853"), bgcolor="rgba(0,0,0,0.6)")
-                        fig.add_annotation(x=hist['Low'].idxmin(), y=min_v, text=f"安値: ${min_v:.2f}", showarrow=True, font=dict(color="#FF5252"), bgcolor="rgba(0,0,0,0.6)")
-                        fig.add_annotation(x=hist.index[-1], y=curr_val, text=f"現在: ${curr_val:.2f}", showarrow=True, font=dict(color="white"), bgcolor="rgba(0,0,0,0.6)")
-                        
-                        y_margin_bottom = min_v * 0.15 
-                        y_margin_top = max_v * 0.10    
-                        y_min_padded = max(0, min_v - y_margin_bottom) 
-                        y_max_padded = max_v + y_margin_top
-                        
-                        fig.update_layout(
-                            height=480, 
-                            margin=dict(l=10,r=10,t=10,b=10), 
-                            xaxis_rangeslider_visible=False,
-                            yaxis=dict(range=[y_min_padded, y_max_padded], autorange=False) 
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-                    with col2:
-                        st.write("#### 📊 業績 & 財務")
-                        rev_g, earn_g = safe_float(info.get("rev_growth")), safe_float(info.get("earn_growth"))
-                        
-                        if rev_g is not None and earn_g is not None:
-                            if rev_g > 0 and earn_g > 0: 
-                                st.success("業績トレンド: 🔥 上向き")
-                            elif rev_g < 0 and earn_g < 0: 
-                                st.error("業績トレンド: 📉 下向き")
+                    # --- 1. 移動平均線の計算 (たっぷりの過去データを使って計算) ---
+                    hist['SMA20'] = hist['Close'].rolling(window=20).mean()
+                    hist['SMA50'] = hist['Close'].rolling(window=50).mean()
+
+                    # --- 2. ユーザーが選んだ「表示期間」だけをハサミで切り出す ---
+                    last_date = hist.index[-1]
+                    if c_p == "1日":
+                        hist = hist[hist.index.date == last_date.date()]
+                    elif c_p == "1週間":
+                        hist = hist[hist.index >= last_date - pd.Timedelta(days=7)]
+                    elif c_p == "1ヶ月":
+                        hist = hist[hist.index >= last_date - pd.DateOffset(months=1)]
+                    elif c_p == "3ヶ月":
+                        hist = hist[hist.index >= last_date - pd.DateOffset(months=3)]
+                    elif c_p == "6ヶ月":
+                        hist = hist[hist.index >= last_date - pd.DateOffset(months=6)]
+                    elif c_p == "1年":
+                        hist = hist[hist.index >= last_date - pd.DateOffset(years=1)]
+
+                    if not hist.empty:
+                        col1, col2 = st.columns([2, 1])
+                        curr_val = hist['Close'].iloc[-1]
+                        with col1:
+                            fig = go.Figure(data=[go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], increasing_line_color='#00C853', decreasing_line_color='#FF5252', name='ローソク足')])
+                            
+                            # --- 移動平均線の描画 ---
+                            fig.add_trace(go.Scatter(x=hist.index, y=hist['SMA20'], mode='lines', name='SMA 20 (短期)', line=dict(color='#29B6F6', width=1.5)))
+                            fig.add_trace(go.Scatter(x=hist.index, y=hist['SMA50'], mode='lines', name='SMA 50 (中期)', line=dict(color='#FFA726', width=1.5)))
+
+                            breaks = [dict(bounds=["sat", "mon"])]
+                            if y_i in ["5m", "60m"]: breaks.append(dict(bounds=[16, 9.5], pattern="hour"))
+                            fig.update_xaxes(rangebreaks=breaks)
+                            
+                            max_v, min_v = hist['High'].max(), hist['Low'].min()
+                            fig.add_annotation(x=hist['High'].idxmax(), y=max_v, text=f"高値: ${max_v:.2f}", showarrow=True, font=dict(color="#00C853"), bgcolor="rgba(0,0,0,0.6)")
+                            fig.add_annotation(x=hist['Low'].idxmin(), y=min_v, text=f"安値: ${min_v:.2f}", showarrow=True, font=dict(color="#FF5252"), bgcolor="rgba(0,0,0,0.6)")
+                            fig.add_annotation(x=hist.index[-1], y=curr_val, text=f"現在: ${curr_val:.2f}", showarrow=True, font=dict(color="white"), bgcolor="rgba(0,0,0,0.6)")
+                            
+                            y_margin_bottom = min_v * 0.15 
+                            y_margin_top = max_v * 0.10    
+                            y_min_padded = max(0, min_v - y_margin_bottom) 
+                            y_max_padded = max_v + y_margin_top
+                            
+                            fig.update_layout(
+                                height=480, 
+                                margin=dict(l=10, r=10, t=30, b=10),
+                                xaxis_rangeslider_visible=False,
+                                yaxis=dict(range=[y_min_padded, y_max_padded], autorange=False),
+                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+                        with col2:
+                            st.write("#### 📊 業績 & 財務")
+                            rev_g, earn_g = safe_float(info.get("rev_growth")), safe_float(info.get("earn_growth"))
+                            
+                            if rev_g is not None and earn_g is not None:
+                                if rev_g > 0 and earn_g > 0: 
+                                    st.success("業績トレンド: 🔥 上向き")
+                                elif rev_g < 0 and earn_g < 0: 
+                                    st.error("業績トレンド: 📉 下向き")
+                                else:
+                                    st.warning("業績トレンド: ⚖️ まちまち")
                             else:
-                                st.warning("業績トレンド: ⚖️ まちまち")
-                        else:
-                            st.info("業績トレンド: ➖ データなし")
+                                st.info("業績トレンド: ➖ データなし")
 
-                        st.info(f"推奨: **{format_recommendation(info.get('rec'))}**")
-                        
-                        t_mean = safe_float(info.get("t_mean"))
-                        if t_mean:
-                            st.write(f"- 平均目標株価: `${t_mean:.2f}` ({((t_mean-curr_val)/curr_val)*100:+.1f}%)")
-                        
-                        # --- 【修正】時価総額に規模を併記 ---
-                        mcap_val = info.get('mcap_raw')
-                        mcap_category = get_mcap_category(mcap_val)
-                        st.write(f"- 時価総額: {format_large_number(mcap_val)}**{mcap_category}**")
+                            st.info(f"推奨: **{format_recommendation(info.get('rec'))}**")
+                            
+                            t_mean = safe_float(info.get("t_mean"))
+                            if t_mean:
+                                st.write(f"- 平均目標株価: `${t_mean:.2f}` ({((t_mean-curr_val)/curr_val)*100:+.1f}%)")
+                            
+                            mcap_val = info.get('mcap_raw')
+                            mcap_category = get_mcap_category(mcap_val)
+                            st.write(f"- 時価総額: {format_large_number(mcap_val)}**{mcap_category}**")
 
-                        st.write(f"- EBITDA: {format_large_number(info.get('ebitda'))}")
-                        st.write(f"- 営業利益率: {safe_float(info.get('margin'), 0)*100:.1f}%")
-                        
-                        actual_eps = safe_float(info.get("eps"))
-                        f_eps = safe_float(info.get("f_eps"))
+                            st.write(f"- EBITDA: {format_large_number(info.get('ebitda'))}")
+                            st.write(f"- 営業利益率: {safe_float(info.get('margin'), 0)*100:.1f}%")
+                            
+                            actual_eps = safe_float(info.get("eps"))
+                            f_eps = safe_float(info.get("f_eps"))
 
-                        st.write(f"- 実績 EPS: **{f'${actual_eps:.2f}' if actual_eps is not None else '-'}**")
-                        if actual_eps is not None and actual_eps > 0:
-                            st.write(f"- 実績 PER: **{(curr_val/actual_eps):.2f} 倍**")
-                        else:
-                            st.write("- 実績 PER: **-**")
+                            st.write(f"- 実績 EPS (TTM): **{f'${actual_eps:.2f}' if actual_eps is not None else '-'}**")
+                            if actual_eps is not None and actual_eps > 0:
+                                st.write(f"- 実績 PER (TTM): **{(curr_val/actual_eps):.2f} 倍**")
+                            else:
+                                st.write("- 実績 PER (TTM): **-**")
 
-                        st.write(f"- 予想 EPS: **{f'${f_eps:.2f}' if f_eps is not None else '-'}**")
-                        if f_eps is not None and f_eps > 0:
-                            st.write(f"- 予想 PER: **{(curr_val/f_eps):.2f} 倍**")
-                        else:
-                            st.write("- 予想 PER: **-**")
-                        
-                        st.markdown("---")
-                        st.write("#### 💰 適正株価シミュレーター")
-                        sim_eps = f_eps if f_eps is not None else 0
-                        input_eps = st.number_input("予想EPS ($)", value=max(0.01, float(sim_eps)), step=0.1)
-                        input_per = st.number_input("ターゲットPER", value=15.0, step=1.0)
-                        fair_val = input_eps * input_per
-                        st.metric("理論株価", f"${fair_val:.2f}", f"{((fair_val - curr_val) / curr_val) * 100:+.1f}%")
-                        st.caption(f"ソース: {info.get('source', '不明')} / {info.get('updated_at', '-')}")
+                            st.write(f"- 予想 EPS (Forward): **{f'${f_eps:.2f}' if f_eps is not None else '-'}**")
+                            if f_eps is not None and f_eps > 0:
+                                st.write(f"- 予想 PER (Forward): **{(curr_val/f_eps):.2f} 倍**")
+                            else:
+                                st.write("- 予想 PER (Forward): **-**")
+                            
+                            st.markdown("---")
+                            st.write("#### 💰 適正株価シミュレーター")
+                            sim_eps = f_eps if f_eps is not None else 0
+                            input_eps = st.number_input("予想EPS ($)", value=max(0.01, float(sim_eps)), step=0.1)
+                            input_per = st.number_input("ターゲットPER", value=15.0, step=1.0)
+                            fair_val = input_eps * input_per
+                            st.metric("理論株価", f"${fair_val:.2f}", f"{((fair_val - curr_val) / curr_val) * 100:+.1f}%")
+                            st.caption(f"ソース: {info.get('source', '不明')} / {info.get('updated_at', '-')}")
